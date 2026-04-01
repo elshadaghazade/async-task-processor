@@ -39,8 +39,8 @@ const config: ConfigSchemaType = {
         level: process.env.LOG_LEVEL ?? 'info'
     },
     queue: {
-        taskQueueName: 'task-processing',
-        taskName: 'process-task'
+        taskQueueName: process.env.QUEUE_TASK_QUEUE_NAME || 'task-processing',
+        taskName: process.env.QUEUE_TASK_NAME || 'process-task'
     }
 }
 
