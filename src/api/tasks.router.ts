@@ -233,7 +233,7 @@ export const postTask: RequestHandler = async (req, res) => {
  *         description: Validation failed
  */
 
-const getTasks: RequestHandler = async (req, res) => {
+export const getTasks: RequestHandler = async (req, res) => {
     const parsed = GetTasksQuerySchema.safeParse(req.query);
 
     if (!parsed.success) {
@@ -262,6 +262,123 @@ const getTasks: RequestHandler = async (req, res) => {
     return res.json({ total, tasks });
 }
 
+/**
+ * @openapi
+ * /api/tasks/failed:
+ *   get:
+ *     tags:
+ *       - Tasks
+ *     summary: Get failed tasks
+ *     description: Returns all tasks with FAILED status ordered by latest update first.
+ *     responses:
+ *       200:
+ *         description: List of failed tasks
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 total:
+ *                   type: integer
+ *                   example: 3
+ *                 tasks:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                         example: 1
+ *                       taskId:
+ *                         type: string
+ *                         example: task_123
+ *                       payload:
+ *                         type: object
+ *                         additionalProperties: true
+ *                       status:
+ *                         type: string
+ *                         example: FAILED
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                       updatedAt:
+ *                         type: string
+ *                         format: date-time
+ */
+export const failedTasks: RequestHandler = async (_req, res) => {
+    const failed = await prisma.task.findMany({
+        where: { status: TaskStatusEnum.FAILED },
+        orderBy: { updatedAt: 'desc' },
+    });
+
+    return res.json({
+        total: failed.length,
+        tasks: failed,
+    });
+}
+
+/**
+ * @openapi
+ * /api/v1/tasks/{taskId}:
+ *   get:
+ *     tags:
+ *       - Tasks
+ *     summary: Get task by taskId
+ *     description: Returns a single task by its unique taskId.
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         description: Unique task identifier
+ *         schema:
+ *           type: string
+ *           example: task_123
+ *     responses:
+ *       200:
+ *         description: Task details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 task:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                       example: 1
+ *                     taskId:
+ *                       type: string
+ *                       example: task_123
+ *                     payload:
+ *                       type: object
+ *                       additionalProperties: true
+ *                     status:
+ *                       type: string
+ *                       example: PENDING
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
+ *       404:
+ *         description: Task not found
+ */
+export const getTaskById: RequestHandler = async (req, res) => {
+  const taskId = req.params.taskId?.toString();
+
+  const task = await prisma.task.findUnique({ where: { taskId } });
+
+  if (!task) {
+    return res.status(404).json({ error: `Task '${taskId}' not found` });
+  }
+
+  return res.json({ task });
+}
+
 
 tasksRouter.post('/', postTask);
 tasksRouter.get('/', getTasks);
+tasksRouter.get('/failed', failedTasks);
+tasksRouter.get('/:taskId', getTaskById);
