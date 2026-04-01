@@ -1,11 +1,12 @@
-import { Router, type Request, type Response } from 'express';
+import { type RequestHandler, Router } from 'express';
 import { SubmitTaskSchema } from './validators/submit-task.validator';
 import { flattenError } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../db/prisma';
 import { logger } from '../lib/logger';
 import { enqueueTask } from '../queue/task.queue';
-import { TaskStatusEnum } from '../generated/prisma';
+import { type Prisma, TaskStatusEnum } from '../generated/prisma';
+import { GetTasksQuerySchema } from './validators/get-tasks-query.validator';
 
 export const tasksRouter = Router();
 
@@ -105,7 +106,7 @@ export const tasksRouter = Router();
  *         description: Validation failed
  */
 
-tasksRouter.post('/', async (req: Request, res: Response) => {
+export const postTask: RequestHandler = async (req, res) => {
     const parsed = SubmitTaskSchema.safeParse(req.body);
 
     if (!parsed.success) {
@@ -134,16 +135,133 @@ tasksRouter.post('/', async (req: Request, res: Response) => {
         });
     }
 
-    const task = await prisma.task.create({
-        data: { taskId: _taskId, payload: payload as any, status: TaskStatusEnum.PENDING },
-    });
+    try {
+        return await prisma.$transaction(async prisma => {
+            const task = await prisma.task.create({
+                data: { taskId: _taskId, payload: payload as any, status: TaskStatusEnum.PENDING },
+            });
 
-    await enqueueTask({ taskId: _taskId, payload });
+            await enqueueTask({ taskId: _taskId, payload });
 
-    logger.info({ taskId: _taskId }, 'Task submitted and enqueued');
+            logger.info({ taskId: _taskId }, 'Task submitted and enqueued');
 
-    return res.status(202).json({
-        message: 'Task accepted',
-        task,
-    });
-});
+            return res.status(202).json({
+                message: 'Task accepted',
+                task,
+            });
+        });
+    } catch (err) {
+        return res.status(500).json({
+            error: 'Task was not processed',
+        });
+    }
+}
+
+/**
+ * @openapi
+ * /api/v1/tasks:
+ *   get:
+ *     tags:
+ *       - Tasks
+ *     summary: Get tasks
+ *     description: Returns a paginated list of tasks. Can be filtered by status.
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         required: false
+ *         description: Filter tasks by status
+ *         schema:
+ *           type: string
+ *           enum:
+ *             - PENDING
+ *             - PROCESSING
+ *             - COMPLETED
+ *             - FAILED
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         description: Maximum number of tasks to return
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *           minimum: 0
+ *           example: 20
+ *       - in: query
+ *         name: offset
+ *         required: false
+ *         description: Number of tasks to skip
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *           minimum: 0
+ *           example: 0
+ *     responses:
+ *       200:
+ *         description: List of tasks
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 total:
+ *                   type: integer
+ *                   example: 125
+ *                 tasks:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                         example: 1
+ *                       taskId:
+ *                         type: string
+ *                         example: task_123
+ *                       payload:
+ *                         type: object
+ *                         additionalProperties: true
+ *                       status:
+ *                         type: string
+ *                         example: PENDING
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                       updatedAt:
+ *                         type: string
+ *                         format: date-time
+ *       400:
+ *         description: Validation failed
+ */
+
+const getTasks: RequestHandler = async (req, res) => {
+    const parsed = GetTasksQuerySchema.safeParse(req.query);
+
+    if (!parsed.success) {
+        return res.status(400).json({
+            error: 'Validation failed',
+            details: flattenError(parsed.error),
+        });
+    }
+
+    const { status, limit, offset } = parsed.data;
+
+    const where: Prisma.TaskWhereInput = {
+        status,
+    };
+
+    const [tasks, total] = await Promise.all([
+        prisma.task.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            take: Math.min(limit, 100),
+            skip: offset,
+        }),
+        prisma.task.count({ where }),
+    ]);
+
+    return res.json({ total, tasks });
+}
+
+
+tasksRouter.post('/', postTask);
+tasksRouter.get('/', getTasks);
