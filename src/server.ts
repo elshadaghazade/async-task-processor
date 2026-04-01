@@ -1,6 +1,7 @@
 import express from 'express';
 import { logger } from './lib/logger';
 import config from './lib/config/env';
+import { tasksRouter } from './api/tasks.router';
 
 const app = express();
 const PORT = config.server.port;
@@ -11,6 +12,8 @@ app.use((req, _res, next) => {
     logger.info({ method: req.method, path: req.path }, 'Incoming request');
     next();
 });
+
+app.use('/api/v1', tasksRouter);
 
 app.get('/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });

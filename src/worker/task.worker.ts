@@ -3,12 +3,11 @@ import { Worker } from 'bullmq';
 import { redisConnection } from '../lib/redis';
 import { logger } from '../lib/logger';
 import config from '../lib/config/env';
+import { processTaskJob } from './processor';
 
 const TASK_QUEUE_NAME = config.queue.taskQueueName;
 
-const worker = new Worker(TASK_QUEUE_NAME, async () => {
-  return;
-}, {
+const worker = new Worker(TASK_QUEUE_NAME, processTaskJob, {
   connection: redisConnection,
   concurrency: 5,
 });
