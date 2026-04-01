@@ -12,7 +12,10 @@
     "start:worker": "node dist/worker/task.worker.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "keywords": [],
   "author": "",
@@ -35,10 +38,13 @@
     "@types/express": "^5.0.6",
     "@types/node": "^25.5.0",
     "@types/pg": "^8.20.0",
+    "@types/supertest": "^7.2.0",
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
+    "@vitest/coverage-v8": "^4.1.2",
     "concurrently": "^9.2.1",
     "prisma": "^7.6.0",
+    "supertest": "^7.2.2",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   }
