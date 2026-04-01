@@ -1,0 +1,45 @@
+{
+  "name": "async-task-processor",
+  "version": "1.0.0",
+  "description": "A production-oriented asynchronous task processing service built with Express, BullMQ, Redis, PostgreSQL, and Prisma ORM.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "dev:worker": "tsx src/worker/task.worker.ts",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:worker\"",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "start:worker": "node dist/worker/task.worker.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev --name init",
+    "prisma:studio": "prisma studio"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.6.0",
+    "@prisma/client": "^7.6.0",
+    "bullmq": "^5.71.1",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "ioredis": "^5.10.1",
+    "pg": "^8.20.0",
+    "pino": "^10.3.1",
+    "pino-pretty": "^13.1.3",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.0",
+    "@types/pg": "^8.20.0",
+    "@types/swagger-jsdoc": "^6.0.4",
+    "@types/swagger-ui-express": "^4.1.8",
+    "concurrently": "^9.2.1",
+    "prisma": "^7.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}
