@@ -22,7 +22,13 @@ const ConfigSchema = zod.object({
     queue: zod.object({
         taskQueueName: zod.string(),
         taskName: zod.string()
-    })
+    }),
+    redis: zod.object({
+        host: zod.string(),
+        port: zod.number().positive(),
+        password: zod.string().optional(),
+        db: zod.number().optional().default(0),
+    }),
 });
 
 export type ConfigSchemaType = zod.infer<typeof ConfigSchema>;
@@ -41,7 +47,13 @@ const config: ConfigSchemaType = {
     queue: {
         taskQueueName: process.env.QUEUE_TASK_QUEUE_NAME || 'task-processing',
         taskName: process.env.QUEUE_TASK_NAME || 'process-task'
-    }
+    },
+    redis: {
+        host: process.env.REDIS_HOST ?? 'localhost',
+        port: process.env.REDIS_PORT ? Number(process.env.REDIS_PORT) : 6379,
+        password: process.env.REDIS_PASSWORD,
+        db: process.env.REDIS_DB ? Number(process.env.REDIS_DB) : 0,
+    },
 }
 
 export default zod.parse(ConfigSchema, config);
