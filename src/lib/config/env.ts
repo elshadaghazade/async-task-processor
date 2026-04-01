@@ -18,6 +18,10 @@ const ConfigSchema = zod.object({
     }),
     db: zod.object({
         database_url: zod.string(),
+    }),
+    queue: zod.object({
+        taskQueueName: zod.string(),
+        taskName: zod.string()
     })
 });
 
@@ -33,6 +37,10 @@ const config: ConfigSchemaType = {
     },
     log: {
         level: process.env.LOG_LEVEL ?? 'info'
+    },
+    queue: {
+        taskQueueName: 'task-processing',
+        taskName: 'process-task'
     }
 }
 
