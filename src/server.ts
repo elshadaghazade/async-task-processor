@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import { logger } from './lib/logger';
 import config from './lib/config/env';
@@ -15,7 +16,7 @@ app.use((req, _res, next) => {
     next();
 });
 
-app.use('/api/v1', tasksRouter);
+app.use('/api/v1/tasks', tasksRouter);
 
 app.get('/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
