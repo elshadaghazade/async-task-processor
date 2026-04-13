@@ -1,0 +1,52 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# DESTROY WORKFLOW — manual trigger only
+#
+# Requires typing "destroy" in the confirmation field to prevent accidents.
+# Never runs automatically — only when you explicitly trigger it from GitHub UI.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" to confirm you want to tear down all infrastructure'
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_VERSION: "1.7.0"
+  AWS_REGION: "us-east-2"
+  AWS_ROLE_ARN: "arn:aws:iam::105299591393:role/github-actions-deploy"
+
+jobs:
+  destroy:
+    name: Terraform Destroy
+    runs-on: ubuntu-latest
+    # Hard gate — job only runs if the user typed "destroy" exactly
+    if: github.event.inputs.confirm == 'destroy'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Terraform destroy
+        run: terraform destroy -input=false -auto-approve

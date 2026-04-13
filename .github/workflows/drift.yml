@@ -1,0 +1,100 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# DRIFT DETECTION
+#
+# Runs every day at 08:00 UTC. Runs terraform plan and fails if it detects
+# any changes — meaning someone modified AWS resources outside of Terraform.
+#
+# If drift is found, it opens a GitHub issue automatically so you know.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+name: Drift detection
+
+on:
+  schedule:
+    - cron: "0 8 * * *"     # every day at 08:00 UTC
+  workflow_dispatch:          # also manually triggerable
+
+permissions:
+  id-token: write
+  contents: read
+  issues: write               # needed to open a GitHub issue on drift
+
+env:
+  TF_VERSION: "1.7.0"
+  AWS_REGION: "us-east-2"
+  AWS_ROLE_ARN: "arn:aws:iam::105299591393:role/github-actions-deploy"
+
+jobs:
+  drift:
+    name: Check for drift
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Terraform plan (drift check)
+        id: plan
+        # -detailed-exitcode: exits 0=no changes, 1=error, 2=changes detected
+        run: |
+          terraform plan \
+            -detailed-exitcode \
+            -input=false \
+            -no-color \
+          2>&1 | tee drift_output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Open issue if drift detected
+        if: steps.plan.outputs.exit_code == '2'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const drift = fs.readFileSync('drift_output.txt', 'utf8');
+            const truncated = drift.length > 60000
+              ? drift.substring(0, 60000) + '\n\n... (truncated)'
+              : drift;
+
+            // Check if a drift issue is already open — don't open duplicates
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'terraform-drift'
+            });
+
+            if (issues.data.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'Terraform drift detected',
+                labels: ['terraform-drift'],
+                body: `## Infrastructure drift detected\n\nTerraform plan found differences between your state file and real AWS resources.\nSomeone may have changed something in the console directly.\n\nRun \`terraform apply\` to bring AWS back in sync with Terraform.\n\n## Plan output\n\`\`\`hcl\n${truncated}\n\`\`\``
+              });
+            }
+
+      - name: Fail if drift or error
+        if: steps.plan.outputs.exit_code != '0'
+        run: |
+          if [ "${{ steps.plan.outputs.exit_code }}" == "2" ]; then
+            echo "Drift detected — see plan output above and the opened GitHub issue"
+          else
+            echo "Terraform plan failed with an error"
+          fi
+          exit 1
