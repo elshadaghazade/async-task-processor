@@ -1,0 +1,151 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# DEPLOY WORKFLOW
+#
+# Triggers:
+#   - Push to main branch  → terraform plan + apply (auto-deploys)
+#   - Pull request         → terraform plan only (shows what would change)
+#   - Manual trigger       → you choose plan-only or full apply
+#
+# Auth: uses OIDC — no AWS access keys stored in GitHub secrets.
+# The role ARN comes from your bootstrap Terraform output:
+#   terraform -chdir=bootstrap output ci_deploy_role_arn
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Deploy
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:           # manual trigger from GitHub UI
+    inputs:
+      action:
+        description: "plan = show changes only, apply = deploy"
+        required: true
+        default: plan
+        type: choice
+        options: [plan, apply]
+
+# These permissions are REQUIRED for OIDC to work.
+# id-token: write  → allows the workflow to get a JWT from GitHub
+# contents: read   → allows checkout
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write         # allows posting plan output as a PR comment
+
+env:
+  TF_VERSION: "1.7.0"
+  AWS_REGION: "us-east-2"
+  # ↓ Get this from: terraform -chdir=bootstrap output ci_deploy_role_arn
+  AWS_ROLE_ARN: "arn:aws:iam::105299591393:role/github-actions-deploy"
+  WORKING_DIR: "."             # change if your tf files are in a subdirectory
+
+jobs:
+  terraform:
+    name: Terraform ${{ github.event_name == 'pull_request' && 'Plan' || (github.event.inputs.action == 'plan' && 'Plan' || 'Apply') }}
+    runs-on: ubuntu-latest
+    # environment: ${{ github.ref == 'refs/heads/main' && 'production' || '' }}
+
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+
+    steps:
+      # ── 1. Checkout your code ─────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Authenticate to AWS via OIDC ───────────────────────────────────
+      # This exchanges the GitHub JWT for temporary AWS credentials.
+      # No secrets needed — the trust policy in IAM allows this repo/branch.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-${{ github.run_id }}
+
+      # ── 3. Verify the identity (useful for debugging) ─────────────────────
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      # ── 4. Install Terraform ──────────────────────────────────────────────
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      # ── 5. terraform init ─────────────────────────────────────────────────
+      # Downloads providers and connects to the S3 backend.
+      - name: Terraform init
+        run: terraform init
+
+      # ── 6. terraform fmt check ────────────────────────────────────────────
+      # Fails if any .tf file is not properly formatted.
+      # Run `terraform fmt` locally to fix before pushing.
+      - name: Terraform format check
+        run: terraform fmt -check -recursive
+
+      # ── 7. terraform validate ─────────────────────────────────────────────
+      # Checks syntax and internal consistency without hitting AWS.
+      - name: Terraform validate
+        run: terraform validate
+
+      # ── 8. terraform plan ─────────────────────────────────────────────────
+      # Always runs — on PRs this is the only step that matters.
+      - name: Terraform plan
+        id: plan
+        run: |
+          terraform plan \
+            -out=tfplan \
+            -input=false \
+            -no-color \
+          2>&1 | tee plan_output.txt
+        continue-on-error: true   # don't fail here — we post the output first
+
+      # ── 9. Post plan output as PR comment ─────────────────────────────────
+      # On pull requests, posts the plan diff as a comment so reviewers
+      # can see exactly what will change before approving.
+      - name: Post plan to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('${{ env.WORKING_DIR }}/plan_output.txt', 'utf8');
+            const truncated = plan.length > 60000
+              ? plan.substring(0, 60000) + '\n\n... (truncated)'
+              : plan;
+            const body = `## Terraform plan\n\`\`\`hcl\n${truncated}\n\`\`\``;
+
+            // Delete previous plan comments on this PR (keep it clean)
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+            for (const c of comments.data) {
+              if (c.body.startsWith('## Terraform plan')) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  comment_id: c.id
+                });
+              }
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number, body
+            });
+
+      # Fail the job now if plan had errors
+      - name: Check plan result
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+      # ── 10. terraform apply ───────────────────────────────────────────────
+      # Only runs on push to main (not on PRs, not on manual plan-only runs)
+      - name: Terraform apply
+        if: |
+          github.event_name == 'push' && github.ref == 'refs/heads/main' ||
+          github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply'
+        run: terraform apply -input=false -auto-approve tfplan

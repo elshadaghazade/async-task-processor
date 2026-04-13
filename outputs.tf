@@ -13,7 +13,7 @@ output "tasks_table_name" {
   value       = aws_dynamodb_table.tasks.name
 }
 
-output "fulfillment_dlq_url" {
+output "failed_dlq_url" {
   description = "Dead-letter queue URL — check here if tasks get stuck"
   value       = aws_sqs_queue.failed_dlq.url
 }

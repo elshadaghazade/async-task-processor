@@ -12,13 +12,13 @@ terraform {
     }
   }
 
-  # backend "s3" {
-  #   bucket         = "asf-tf-state-aac9b5fb"
-  #   key            = "serverless-stack/terraform.tfstate"
-  #   region         = "us-east-2"
-  #   dynamodb_table = "terraform-state-lock"
-  #   encrypt        = true
-  # }
+  backend "s3" {
+    bucket         = "asf-tf-state-aac9b5fb"
+    key            = "serverless-stack/terraform.tfstate"
+    region         = "us-east-2"
+    dynamodb_table = "terraform-state-lock"
+    encrypt        = true
+  }
 }
 
 provider "aws" {
